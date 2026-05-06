@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>井字棋 — 人机对战</title>
+  <style>
+    :root{
+      --bg:#0f1724; --panel:#0b1220; --accent:#06b6d4; --cell:#0f1724; --text:#e6eef8;
+    }
+    body{
+      margin:0; font-family:system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial; background:linear-gradient(180deg,#071024,#0b1220);
+      color:var(--text); display:flex;align-items:center;justify-content:center;min-height:100vh;
+    }
+    .container{
+      width:360px; max-width:95vw; background:rgba(255,255,255,0.03); border-radius:12px; padding:18px; box-shadow:0 8px 30px rgba(2,6,23,0.6);
+    }
+    h1{margin:0 0 10px;font-size:20px;text-align:center}
+    .status{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:14px}
+    .board{
+      display:grid; grid-template-columns:repeat(3,1fr); gap:8px; background:transparent;
+    }
+    .cell{
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      aspect-ratio:1/1; display:flex;align-items:center;justify-content:center; font-size:48px; cursor:pointer;
+      border-radius:8px; user-select:none; transition:transform .08s ease, box-shadow .12s;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,0.02);
+    }
+    .cell:active{transform:scale(.98)}
+    .cell.win{background:linear-gradient(90deg, rgba(6,182,212,0.12), rgba(96,165,250,0.06)); box-shadow:0 6px 20px rgba(6,182,212,0.06)}
+    .controls{display:flex;gap:8px;margin-top:12px;justify-content:space-between}
+    button{background:var(--accent);color:#00232b;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600}
+    .small{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,0.04);padding:6px 10px}
+    .note{font-size:12px;color:rgba(230,238,248,0.7)}
+  </style>
+</head>
+<body>
+  <div class="container" role="application" aria-label="井字棋游戏">
+    <h1>井字棋 — 人机对战</h1>
+    <div class="status">
+      <div class="note" id="turn">轮到: 你 (X)</div>
+      <div class="note" id="score">你: 0 • 电脑: 0 • 平局: 0</div>
+    </div>
+    <div class="board" id="board" aria-live="polite"></div>
+    <div class="controls">
+      <button id="restart">重新开始</button>
+      <button id="swap" class="small">切换先手（当前: 你先）</button>
+    </div>
+  </div>
+
+  <script>
+    // 井字棋实现（单文件）
+    // 人类 = 'X', 电脑 = 'O'
+    const boardEl = document.getElementById('board');
+    const turnEl = document.getElementById('turn');
+    const scoreEl = document.getElementById('score');
+    const restartBtn = document.getElementById('restart');
+    const swapBtn = document.getElementById('swap');
+
+    let board = Array(9).fill(null);
+    let human = 'X', ai = 'O';
+    let humanStarts = true;
+    let currentPlayer = human;
+    let gameOver = false;
+    let score = {human:0, ai:0, tie:0};
+
+    const wins = [
+      [0,1,2],[3,4,5],[6,7,8],
+      [0,3,6],[1,4,7],[2,5,8],
+      [0,4,8],[2,4,6]
+    ];
+
+    function render(){
+      boardEl.innerHTML = '';
+      for(let i=0;i<9;i++){
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.index = i;
+        cell.setAttribute('role','button');
+        cell.setAttribute('aria-label', '格子 ' + (i+1));
+        cell.textContent = board[i] || '';
+        cell.addEventListener('click', onCellClick);
+        boardEl.appendChild(cell);
+      }
+    }
+
+    function onCellClick(e){
+      const idx = Number(e.currentTarget.dataset.index);
+      if(gameOver || board[idx]) return;
+      if(currentPlayer !== human) return;
+      makeMove(idx, human);
+      if(!gameOver) {
+        // 电脑延迟一点，感觉更自然
+        setTimeout(() => { aiMove(); }, 300);
+      }
+    }
+
+    function makeMove(idx, player){
+      if(board[idx]) return;
+      board[idx] = player;
+      updateUI();
+      const res = checkWinner(board);
+      if(res){
+        endGame(res);
+        return;
+      }
+      currentPlayer = (player === human) ? ai : human;
+      updateTurnText();
+    }
+
+    function updateUI(){
+      // 高亮胜利线
+      const res = checkWinner(board);
+      render();
+      if(res && res.winner){
+        for(const i of res.line){
+          const cell = boardEl.querySelector(`[data-index="${i}"]`);
+          if(cell) cell.classList.add('win');
+        }
+      }
+      updateScoreText();
+    }
+
+    function updateTurnText(){
+      if(gameOver) return;
+      if(currentPlayer === human) turnEl.textContent = '轮到: 你 (X)';
+      else turnEl.textContent = '轮到: 电脑 (O)';
+    }
+
+    function checkWinner(b){
+      for(const line of wins){
+        const [a,b1,c] = line;
+        if(b[a] && b[a] === b[b1] && b[a] === b[c]){
+          return {winner: b[a], line};
+        }
+      }
+      if(b.every(Boolean)) return {winner: 'tie'};
+      return null;
+    }
+
+    function endGame(result){
+      gameOver = true;
+      if(result.winner === 'tie'){
+        turnEl.textContent = '平局！';
+        score.tie++;
+      } else if(result.winner === human){
+        turnEl.textContent = '你赢了 🎉';
+        score.human++;
+      } else {
+        turnEl.textContent = '电脑赢了 🤖';
+        score.ai++;
+      }
+      updateUI();
+    }
+
+    // 简单 Minimax 实现，电脑寻找最优解
+    function aiMove(){
+      if(gameOver) return;
+      const best = minimax(board.slice(), ai);
+      if(best.index != null){
+        makeMove(best.index, ai);
+      }
+    }
+
+    function minimax(newBoard, player){
+      const avail = newBoard.map((v,i)=> v?null:i).filter(x=>x!==null);
+      const winnerRes = checkWinner(newBoard);
+      if(winnerRes){
+        if(winnerRes.winner === human) return {score: -10};
+        else if(winnerRes.winner === ai) return {score: 10};
+        else return {score: 0};
+      }
+
+      const moves = [];
+      for(const i of avail){
+        const move = {};
+        move.index = i;
+        newBoard[i] = player;
+        const result = minimax(newBoard, player === ai ? human : ai);
+        move.score = result.score;
+        newBoard[i] = null;
+        moves.push(move);
+      }
+
+      // 选择最高/最低得分
+      let bestMove;
+      if(player === ai){
+        let bestScore = -Infinity;
+        for(const m of moves){
+          if(m.score > bestScore){ bestScore = m.score; bestMove = m; }
+        }
+      } else {
+        let bestScore = Infinity;
+        for(const m of moves){
+          if(m.score < bestScore){ bestScore = m.score; bestMove = m; }
+        }
+      }
+      return bestMove || {score:0};
+    }
+
+    function updateScoreText(){
+      scoreEl.textContent = `你: ${score.human} • 电脑: ${score.ai} • 平局: ${score.tie}`;
+    }
+
+    function resetBoard(){
+      board = Array(9).fill(null);
+      gameOver = false;
+      currentPlayer = humanStarts ? human : ai;
+      // 如果电脑先手，延迟让电脑下第一步
+      render();
+      updateTurnText();
+      if(currentPlayer === ai){
+        setTimeout(()=> aiMove(), 400);
+      }
+    }
+
+    restartBtn.addEventListener('click', ()=>{
+      score = {human:0, ai:0, tie:0};
+      resetBoard();
+      updateScoreText();
+    });
+
+    swapBtn.addEventListener('click', ()=>{
+      humanStarts = !humanStarts;
+      swapBtn.textContent = `切换先手（当前: ${humanStarts ? '你先' : '电脑先'}）`;
+      resetBoard();
+    });
+
+    // 初始化
+    render();
+    resetBoard();
+  </script>
+</body>
+</html>
